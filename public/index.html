@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>FriendlyRando — ta rando en mode jeu</title>
-  <meta name="description" content="Joue ta prochaine rando en 3D : relief, défis, énergie, XP et survol du parcours à partir d'une trace GPX.">
+  <title>FriendlyRando — ta rando en 3D</title>
+  <meta name="description" content="Découvre une rando en 3D avant d'y aller : relief, points de passage, difficulté, énergie demandée et parcours animé à partir d'une trace GPX.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛰️</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,79 +17,85 @@
 
   <!-- Barre du haut -->
   <header class="topbar">
-    <div class="mission-picker">
-      <button id="btn-mission" class="chip" type="button" aria-haspopup="true">
-        <span class="chip-kicker">Mission</span>
-        <span id="mission-name">Chargement…</span>
+    <div class="rando-picker">
+      <button id="btn-rando" class="chip" type="button" aria-haspopup="true">
+        <span class="chip-kicker">Rando</span>
+        <span id="rando-name">Chargement…</span>
         <span class="chev">▾</span>
       </button>
-      <div id="mission-menu" class="menu" hidden>
-        <div id="mission-list"></div>
+      <div id="rando-menu" class="menu" hidden>
+        <div id="rando-list"></div>
         <button id="btn-upload" class="menu-item" type="button">📂 Importer mon fichier GPX</button>
       </div>
       <input id="file-input" type="file" accept=".gpx,application/gpx+xml" hidden>
     </div>
     <div class="topbar-right">
-      <button id="btn-sound" class="icon-btn" type="button" title="Son">🔊</button>
+      <div class="segmented mapmode" data-basemap-switch>
+        <button type="button" data-base="satellite" class="active">🛰️ <span class="txt">Satellite</span></button>
+        <button type="button" data-base="game">🎮 <span class="txt">Rendu jeu</span></button>
+      </div>
       <button id="btn-settings" class="icon-btn" type="button" title="Réglages de la carte">⚙️</button>
       <div id="settings" class="menu settings" hidden>
         <h3>Fond de carte</h3>
-        <div class="segmented" id="basemap">
+        <div class="segmented" data-basemap-switch>
           <button type="button" data-base="satellite" class="active">Satellite</button>
+          <button type="button" data-base="game">Jeu</button>
           <button type="button" data-base="plan">Plan IGN</button>
           <button type="button" data-base="topo">Topo</button>
         </div>
         <h3>Montagnes <b id="exag-value">×1,3</b></h3>
         <input id="exaggeration" type="range" min="1" max="2.5" step="0.1" value="1.3" aria-label="Accentuer le relief">
         <button id="btn-3d" class="menu-item" type="button">🗺️ Passer en vue carte (2D)</button>
-        <p class="credits">Fonds © IGN, © Esri, © OpenTopoMap · Relief Mapzen/AWS · Sentiers © OpenStreetMap</p>
+        <p class="credits">Fonds © IGN, © Esri, © OpenFreeMap, © OpenTopoMap · Relief Mapzen/AWS · Sentiers © OpenStreetMap</p>
       </div>
     </div>
   </header>
 
-  <!-- Écran de mission (avant de jouer) -->
+  <!-- Fiche de présentation -->
   <aside id="briefing" class="briefing">
     <div class="briefing-scroll">
       <article id="item-card" class="item-card">
-        <div class="rarity-row">
-          <span id="rarity" class="rarity">Rare</span>
-          <span id="rarity-level" class="rarity-level"></span>
+        <div class="level-row">
+          <span class="level-dot"></span>
+          <span id="level-label" class="level-label">Modérée</span>
         </div>
         <h1 id="rando-title">…</h1>
         <p id="rando-region" class="region"></p>
         <div id="card-stats" class="card-stats"></div>
       </article>
       <p id="rando-desc" class="desc" title="Lire la suite"></p>
-      <section class="quests-box">
-        <h2>🎯 Défis</h2>
-        <ul id="quests" class="quests"></ul>
+
+      <section class="box">
+        <h2>Le terrain</h2>
+        <div id="terrain-bar" class="terrain-bar"></div>
+        <ul id="terrain-legend" class="terrain-legend"></ul>
+        <p id="hardest" class="hardest"></p>
+      </section>
+
+      <section class="box">
+        <h2>Points de passage</h2>
+        <ol id="steps" class="steps"></ol>
       </section>
     </div>
     <div class="briefing-actions">
-      <button id="btn-play" class="btn-play" type="button"><span>Jouer</span></button>
+      <button id="btn-play" class="btn-play" type="button"><span>▶ Lancer la rando</span></button>
       <button id="btn-overview" class="btn-link" type="button">🔭 Vue d'ensemble</button>
     </div>
   </aside>
 
-  <!-- HUD pendant la partie -->
+  <!-- Affichage pendant la visite -->
   <div class="hud">
     <div class="hud-top">
       <div class="pill"><span class="pill-ico">🥾</span><b id="hud-km">0,0</b><small id="hud-total">/ 0 km</small></div>
       <div class="pill"><span class="pill-ico">🕗</span><b id="hud-clock">08:30</b></div>
-      <div class="pill pill-xp">
-        <span class="lvl" title="Niveau"><small>NIV</small><b id="hud-level">1</b></span>
-        <div class="xp-col">
-          <div><b id="hud-xp">0</b> <small>XP</small></div>
-          <div class="xp-bar"><i id="hud-xpbar"></i></div>
-        </div>
-      </div>
+      <div class="pill"><span class="pill-ico">⛰️</span><b id="hud-alt">0</b><small>m</small></div>
     </div>
 
-    <ul id="hud-quests" class="quests hud-quests"></ul>
+    <div id="next-stop" class="next-stop"></div>
 
     <div class="vitals">
       <div class="energy" id="energy">
-        <div class="energy-head"><span>⚡ Énergie</span><b id="hud-energy">100</b></div>
+        <div class="energy-head"><span>⚡ Énergie demandée</span><b id="hud-energy">Peu</b></div>
         <div class="energy-bar"><i id="hud-energybar"></i></div>
       </div>
       <div class="gauges">
@@ -102,24 +108,21 @@
         </div>
         <div class="terrain" id="terrain">
           <span id="hud-terrain-emoji" class="terrain-emoji">🙂</span>
-          <div>
-            <b id="hud-terrain">Tranquille</b>
-            <small id="hud-alt">⛰️ 0 m</small>
-          </div>
+          <b id="hud-terrain">Tranquille</b>
         </div>
       </div>
     </div>
 
     <div class="controls">
       <button id="btn-pause" class="ctl ctl-main" type="button" title="Pause">⏸</button>
-      <div class="segmented speed" id="speed" title="Vitesse du jeu">
+      <div class="segmented speed" id="speed" title="Vitesse">
         <button type="button" data-speed="1" class="active">x1</button>
         <button type="button" data-speed="2">x2</button>
         <button type="button" data-speed="4">x4</button>
       </div>
       <button id="btn-camera" class="ctl" type="button" title="Changer de caméra">🚁 <span>Drone</span></button>
-      <button id="btn-sound-2" class="ctl ctl-sound" type="button" title="Son">🔊</button>
-      <button id="btn-quit" class="ctl" type="button" title="Quitter la partie">✖</button>
+      <button id="btn-mapmode" class="ctl" type="button" title="Satellite / rendu jeu">🎮</button>
+      <button id="btn-quit" class="ctl" type="button" title="Revenir à la présentation">✖</button>
     </div>
 
     <div class="paused-banner">⏸ Pause — appuie sur ▶ pour repartir</div>
@@ -137,19 +140,16 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="countdown" class="countdown" hidden></div>
 
-  <!-- Écran de fin -->
+  <!-- Arrivée -->
   <div id="endscreen" class="endscreen" hidden>
-    <div id="confetti" class="confetti"></div>
     <div class="end-card">
-      <div class="end-rank">#1</div>
-      <h2 id="end-title">Rando bouclée !</h2>
+      <div class="end-flag">🏁</div>
+      <h2 id="end-title">Arrivée !</h2>
       <p id="end-sub" class="end-sub"></p>
       <div id="end-stats" class="end-stats"></div>
-      <h3>Badges débloqués</h3>
-      <div id="end-badges" class="badges"></div>
       <div class="end-actions">
-        <button id="btn-replay" class="btn-play btn-play-sm" type="button"><span>🔁 Rejouer</span></button>
-        <button id="btn-lobby" class="btn-ghost" type="button">🗺️ Retour à la mission</button>
+        <button id="btn-replay" class="btn-play btn-play-sm" type="button"><span>🔁 Revoir</span></button>
+        <button id="btn-lobby" class="btn-ghost" type="button">🗺️ Retour à la présentation</button>
         <button class="btn-ghost" type="button" disabled title="Bientôt disponible">🎬 Exporter la vidéo · bientôt</button>
       </div>
     </div>

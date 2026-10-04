@@ -98,14 +98,6 @@ export function walkingSpeed(slopePct) {
   return 6 * Math.exp(-3.5 * Math.abs(slopePct / 100 + 0.05));
 }
 
-function difficulty(km, up) {
-  const effort = km + up / 100;
-  if (effort < 12) return { label: 'Facile', color: '#2e9e5b', bg: '#e3f4ea' };
-  if (effort < 22) return { label: 'Modérée', color: '#a77b00', bg: '#fbf1d3' };
-  if (effort < 32) return { label: 'Sportive', color: '#c25a0a', bg: '#fde6d3' };
-  return { label: 'Difficile', color: '#b0182f', bg: '#fadbe0' };
-}
-
 export function analyzeTrack(points, waypoints = []) {
   const { samples, total, cum } = resample(points);
   const eles = smooth(samples.map((s) => s.ele), 4);
@@ -183,7 +175,6 @@ export function analyzeTrack(points, waypoints = []) {
       maxEle,
       minEle,
       hours,
-      difficulty: difficulty(total / 1000, up),
     },
   };
 }

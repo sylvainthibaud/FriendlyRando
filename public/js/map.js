@@ -1,18 +1,115 @@
-// Carte 3D MapLibre : fonds IGN / Esri / OpenTopoMap, relief, tracé coloré par la pente.
+// Carte 3D MapLibre : fond satellite (IGN / Esri), rendu « jeu vidéo », Plan IGN ou OpenTopoMap,
+// relief, tracé coloré par la pente, bouquetin et points de passage.
 import { TERRAIN_TILES } from './dem.js';
-import { slopeColor, fmtM } from './analyze.js';
+import { slopeColor, fmtM, pointAt, distance } from './analyze.js';
+import { createIbex } from './ibex.js';
 
 const IGN = (layer, format) =>
   `https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}` +
   `&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=${format}`;
 
-// Points dont le nom reste affiché même en vue éloignée
-const MAJOR_POI = ['refuge', 'cabane', 'hut', 'sommet', 'summit', 'peak', 'col'];
+// Distances (m) autour d'un point de passage où son nom s'affiche : en approche et juste après
+const NAME_BEFORE = 600;
+const NAME_AFTER = 300;
+const NAME_OFF_TRACK = 1500; // pour les lieux hors du tracé (sommet visible au loin…)
+
+// Rendu « jeu vidéo » : teintes par altitude, forêts et lacs en aplats vifs, ombrage violet
+const GAME_LAYERS = [
+  {
+    id: 'game-relief',
+    type: 'color-relief',
+    source: 'hillshadeSource',
+    paint: {
+      'color-relief-color': [
+        'interpolate', ['linear'], ['elevation'],
+        0, '#6fcf5b', 900, '#8fd95a', 1400, '#b4dc5c', 1750, '#d6d27a',
+        2000, '#c9b18c', 2300, '#a99f9a', 2600, '#dcdce8', 2900, '#ffffff',
+      ],
+    },
+  },
+  {
+    id: 'game-wood',
+    type: 'fill',
+    source: 'omt',
+    'source-layer': 'landcover',
+    filter: ['==', ['get', 'class'], 'wood'],
+    paint: { 'fill-color': '#2f9e44', 'fill-opacity': 0.6 },
+  },
+  {
+    id: 'game-rock',
+    type: 'fill',
+    source: 'omt',
+    'source-layer': 'landcover',
+    filter: ['in', ['get', 'class'], ['literal', ['rock', 'sand']]],
+    paint: { 'fill-color': '#c2b8a8', 'fill-opacity': 0.45 },
+  },
+  {
+    id: 'game-ice',
+    type: 'fill',
+    source: 'omt',
+    'source-layer': 'landcover',
+    filter: ['==', ['get', 'class'], 'ice'],
+    paint: { 'fill-color': '#f2fbff', 'fill-opacity': 0.9 },
+  },
+  {
+    id: 'game-water',
+    type: 'fill',
+    source: 'omt',
+    'source-layer': 'water',
+    paint: { 'fill-color': '#25c4ff', 'fill-outline-color': '#d9f7ff' },
+  },
+  {
+    id: 'game-waterway',
+    type: 'line',
+    source: 'omt',
+    'source-layer': 'waterway',
+    paint: { 'line-color': '#25c4ff', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.8, 16, 2.5] },
+  },
+  {
+    id: 'game-paths',
+    type: 'line',
+    source: 'omt',
+    'source-layer': 'transportation',
+    filter: ['in', ['get', 'class'], ['literal', ['path', 'track']]],
+    paint: { 'line-color': '#fff3c4', 'line-opacity': 0.55, 'line-width': 1.2, 'line-dasharray': [2, 2] },
+  },
+  {
+    id: 'game-hillshade',
+    type: 'hillshade',
+    source: 'hillshadeSource',
+    paint: {
+      'hillshade-exaggeration': 0.5,
+      'hillshade-shadow-color': '#5240b8',
+      'hillshade-highlight-color': '#fff7cf',
+      'hillshade-accent-color': '#6a58c4',
+    },
+  },
+].map((l) => ({ ...l, layout: { ...l.layout, visibility: 'none' } }));
 
 const BASEMAPS = {
-  satellite: ['base-esri', 'base-ortho'],
-  plan: ['base-plan'],
-  topo: ['base-topo'],
+  satellite: ['base-esri', 'base-ortho', 'hillshade'],
+  game: GAME_LAYERS.map((l) => l.id),
+  plan: ['base-plan', 'hillshade'],
+  topo: ['base-topo', 'hillshade'],
+};
+
+const SKIES = {
+  default: {
+    'sky-color': '#7fb4e2',
+    'horizon-color': '#e6eff6',
+    'fog-color': '#eef3f6',
+    'sky-horizon-blend': 0.6,
+    'horizon-fog-blend': 0.7,
+    'fog-ground-blend': 0.85,
+  },
+  game: {
+    'sky-color': '#3fa9ff',
+    'horizon-color': '#c9f0ff',
+    'fog-color': '#d9f3ff',
+    'sky-horizon-blend': 0.55,
+    'horizon-fog-blend': 0.6,
+    'fog-ground-blend': 0.8,
+  },
 };
 
 const style = {
@@ -47,6 +144,11 @@ const style = {
       maxzoom: 17,
       attribution: '© OpenTopoMap (CC-BY-SA), © contributeurs OpenStreetMap',
     },
+    omt: {
+      type: 'vector',
+      url: 'https://tiles.openfreemap.org/planet',
+      attribution: '© OpenFreeMap, © contributeurs OpenStreetMap',
+    },
     terrain: {
       type: 'raster-dem',
       tiles: [TERRAIN_TILES],
@@ -69,6 +171,7 @@ const style = {
     { id: 'base-ortho', type: 'raster', source: 'ortho' },
     { id: 'base-plan', type: 'raster', source: 'plan', layout: { visibility: 'none' } },
     { id: 'base-topo', type: 'raster', source: 'topo', layout: { visibility: 'none' } },
+    ...GAME_LAYERS,
     {
       id: 'hillshade',
       type: 'hillshade',
@@ -77,14 +180,7 @@ const style = {
     },
   ],
   terrain: { source: 'terrain', exaggeration: 1.3 },
-  sky: {
-    'sky-color': '#7fb4e2',
-    'horizon-color': '#e6eff6',
-    'fog-color': '#eef3f6',
-    'sky-horizon-blend': 0.6,
-    'horizon-fog-blend': 0.7,
-    'fog-ground-blend': 0.85,
-  },
+  sky: SKIES.default,
 };
 
 export class TrailMap {
@@ -103,11 +199,10 @@ export class TrailMap {
     this.poiMarkers = [];
     this.exaggeration = 1.3;
     this.is3D = true;
+    this.basemap = 'satellite';
 
-    const el = document.createElement('div');
-    el.className = 'player';
-    el.innerHTML = `<div class="player-tag">TOI</div><div class="player-avatar">🥾</div>`;
-    this.cursor = new maplibregl.Marker({ element: el, anchor: 'bottom' });
+    this.cursorEl = createIbex();
+    this.cursor = new maplibregl.Marker({ element: this.cursorEl, anchor: 'bottom' });
 
     this.ready = new Promise((resolve) => this.map.on('load', resolve)).then(() => this.addTrackLayers());
 
@@ -122,7 +217,7 @@ export class TrailMap {
       this.map.getCanvasContainer().addEventListener(evt, () => onUserInteract?.(), { passive: true });
     }
 
-    // Vue éloignée : on n'affiche que les noms des points principaux pour éviter l'encombrement
+    // Vue éloignée : bornes kilométriques masquées pour ne pas surcharger
     const box = this.map.getContainer();
     const updateDensity = () => box.classList.toggle('map-far', this.map.getZoom() < 14);
     this.map.on('zoomend', updateDensity);
@@ -157,19 +252,16 @@ export class TrailMap {
       id: 'track-line',
       type: 'line',
       source: 'track',
-      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      layout: round,
       paint: { 'line-color': '#1f6f4a', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 3.5, 16, 8] },
     });
-    // Chemin déjà parcouru pendant la partie : traînée dorée
+    // Chemin déjà parcouru pendant la visite : traînée dorée
     this.map.addLayer({
       id: 'done-line',
       type: 'line',
       source: 'done',
       layout: round,
-      paint: {
-        'line-color': '#ffd23f',
-        'line-width': ['interpolate', ['linear'], ['zoom'], 11, 5, 16, 10],
-      },
+      paint: { 'line-color': '#ffd23f', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 5, 16, 10] },
     });
     this.map.addLayer({
       id: 'track-hit',
@@ -219,11 +311,21 @@ export class TrailMap {
     });
   }
 
-  // Points de passage atteints (d = distance parcourue, null = tous visibles normalement)
-  setFound(d) {
+  // Noms des lieux : affichés seulement à l'approche du point p (et juste après l'avoir passé)
+  setNear(p) {
     for (const { el, poi } of this.poiMarkers) {
-      el.classList.toggle('found', d !== null && poi.onTrack && poi.d <= d);
-      el.classList.toggle('locked', d !== null && poi.onTrack && poi.d > d);
+      let near = false;
+      if (p) {
+        near = poi.onTrack ? p.d >= poi.d - NAME_BEFORE && p.d <= poi.d + NAME_AFTER : distance(p, poi) < NAME_OFF_TRACK;
+      }
+      el.classList.toggle('near', near);
+    }
+  }
+
+  // Points déjà passés pendant la visite (null = aucun)
+  setPassed(d) {
+    for (const { el, poi } of this.poiMarkers) {
+      el.classList.toggle('passed', d !== null && poi.onTrack && poi.d <= d);
     }
   }
 
@@ -244,7 +346,7 @@ export class TrailMap {
       const s = track.samples[Math.round(d / 10)];
       if (!s) continue;
       const el = document.createElement('div');
-      el.className = (d / step) % 2 ? 'km odd' : 'km';
+      el.className = 'km';
       el.textContent = `${d / 1000} km`;
       add(el, [s.lon, s.lat], 'center');
     }
@@ -255,7 +357,7 @@ export class TrailMap {
     const flag = (label) => {
       const el = document.createElement('div');
       el.className = 'poi start';
-      el.innerHTML = `<span class="ico">🚩</span>${label}`;
+      el.innerHTML = `<span class="ico">🚩</span><span class="label">${label}</span>`;
       return el;
     };
     if (track.loop) {
@@ -265,11 +367,11 @@ export class TrailMap {
       add(flag('Arrivée'), [last.lon, last.lat]);
     }
 
-    // Points d'intérêt (sauf ceux confondus avec le départ)
+    // Points d'intérêt (sauf ceux confondus avec le départ) : icône seule, nom à l'approche
     for (const p of track.pois) {
       if (p.onTrack && (p.d < 150 || (track.loop && p.d > track.stats.distance - 150))) continue;
       const el = document.createElement('div');
-      el.className = MAJOR_POI.includes(p.type) ? 'poi' : 'poi minor';
+      el.className = 'poi';
       el.title = p.ele ? `${p.name} · ${fmtM(p.ele)}` : p.name;
       el.innerHTML = `<span class="ico">${p.icon}</span>`;
       const label = document.createElement('span');
@@ -291,7 +393,7 @@ export class TrailMap {
     return b;
   }
 
-  // Marges laissées libres par l'interface posée sur la carte (fiche mission, profil…)
+  // Marges laissées libres par l'interface posée sur la carte (fiche de présentation, profil…)
   padding() {
     if (this.paddingFn) return this.paddingFn();
     return { top: 70, bottom: 250, left: 70, right: 70 };
@@ -331,6 +433,7 @@ export class TrailMap {
     });
   }
 
+  // Bouquetin : position, et orientation gauche/droite selon le sens de marche à l'écran
   setCursor(p) {
     if (!p) {
       this.cursor.remove();
@@ -342,12 +445,24 @@ export class TrailMap {
       this.cursor.addTo(this.map);
       this.cursorShown = true;
     }
+    if (this.track) {
+      const q = pointAt(this.track, Math.min(p.d + 25, this.track.stats.distance));
+      const a = this.map.project([p.lon, p.lat]);
+      const b = this.map.project([q.lon, q.lat]);
+      if (Math.abs(b.x - a.x) > 1.5) this.cursorEl.classList.toggle('flip', b.x < a.x);
+    }
+  }
+
+  setWalking(walking) {
+    this.cursorEl.classList.toggle('walking', walking);
   }
 
   setBasemap(name) {
-    for (const [key, layers] of Object.entries(BASEMAPS)) {
-      for (const id of layers) this.map.setLayoutProperty(id, 'visibility', key === name ? 'visible' : 'none');
-    }
+    this.basemap = name;
+    const visible = new Set(BASEMAPS[name]);
+    const all = new Set(Object.values(BASEMAPS).flat());
+    for (const id of all) this.map.setLayoutProperty(id, 'visibility', visible.has(id) ? 'visible' : 'none');
+    this.map.setSky(name === 'game' ? SKIES.game : SKIES.default);
   }
 
   setExaggeration(v) {
