@@ -84,7 +84,19 @@ const GAME_LAYERS = [
       'hillshade-accent-color': '#6a58c4',
     },
   },
-].map((l) => ({ ...l, layout: { ...l.layout, visibility: 'none' } }));
+];
+
+// Dégradé « parcouru » : doré jusqu'à la fraction f du tracé, transparent ensuite
+const GOLD = '#ffd23f';
+const CLEAR = 'rgba(255,210,63,0)';
+function doneGradient(f) {
+  if (f <= 0.0005) return ['interpolate', ['linear'], ['line-progress'], 0, CLEAR, 1, CLEAR];
+  if (f >= 0.9995) return ['interpolate', ['linear'], ['line-progress'], 0, GOLD, 1, GOLD];
+  return ['interpolate', ['linear'], ['line-progress'], 0, GOLD, f, GOLD, f + 0.0004, CLEAR, 1, CLEAR];
+}
+
+// Fond affiché au démarrage
+export const DEFAULT_BASEMAP = 'game';
 
 const BASEMAPS = {
   satellite: ['base-esri', 'base-ortho', 'hillshade'],
@@ -180,8 +192,16 @@ const style = {
     },
   ],
   terrain: { source: 'terrain', exaggeration: 1.3 },
-  sky: SKIES.default,
+  sky: DEFAULT_BASEMAP === 'game' ? SKIES.game : SKIES.default,
 };
+
+// Visibilité initiale des couches de fond selon le fond par défaut
+const BASE_LAYER_IDS = new Set(Object.values(BASEMAPS).flat());
+for (const layer of style.layers) {
+  if (!BASE_LAYER_IDS.has(layer.id)) continue;
+  const visible = BASEMAPS[DEFAULT_BASEMAP].includes(layer.id);
+  layer.layout = { ...layer.layout, visibility: visible ? 'visible' : 'none' };
+}
 
 export class TrailMap {
   constructor(container, { onHover, onLeave, onClick, onUserInteract } = {}) {
@@ -192,14 +212,17 @@ export class TrailMap {
       zoom: 12,
       pitch: 60,
       maxPitch: 80,
+      // Résolution plafonnée : beaucoup plus fluide sur les écrans haute densité, différence peu visible
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5),
       attributionControl: { compact: true },
     });
     this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     this.markers = [];
     this.poiMarkers = [];
+    this.kmMarkers = [];
     this.exaggeration = 1.3;
     this.is3D = true;
-    this.basemap = 'satellite';
+    this.basemap = DEFAULT_BASEMAP;
 
     this.cursorEl = createIbex();
     this.cursor = new maplibregl.Marker({ element: this.cursorEl, anchor: 'bottom' });
@@ -227,7 +250,6 @@ export class TrailMap {
   addTrackLayers() {
     const empty = { type: 'FeatureCollection', features: [] };
     this.map.addSource('track', { type: 'geojson', data: empty, lineMetrics: true });
-    this.map.addSource('done', { type: 'geojson', data: empty });
     const round = { 'line-join': 'round', 'line-cap': 'round' };
     this.map.addLayer({
       id: 'track-glow',
@@ -255,13 +277,18 @@ export class TrailMap {
       layout: round,
       paint: { 'line-color': '#1f6f4a', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 3.5, 16, 8] },
     });
-    // Chemin déjà parcouru pendant la visite : traînée dorée
+    // Chemin déjà parcouru pendant la visite : traînée dorée, dessinée par un dégradé
+    // sur le tracé lui-même (bien plus léger que de renvoyer une géométrie à chaque image)
     this.map.addLayer({
       id: 'done-line',
       type: 'line',
-      source: 'done',
+      source: 'track',
       layout: round,
-      paint: { 'line-color': '#ffd23f', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 5, 16, 10] },
+      paint: {
+        'line-color': '#ffd23f',
+        'line-gradient': doneGradient(0),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 11, 5, 16, 10],
+      },
     });
     this.map.addLayer({
       id: 'track-hit',
@@ -301,14 +328,15 @@ export class TrailMap {
 
   // Trace dorée du départ jusqu'à la distance d
   setDone(d) {
-    const src = this.map.getSource('done');
-    if (!src || !this.track) return;
-    const coords = this.track.samples.filter((s) => s.d <= d).map((s) => [s.lon, s.lat]);
-    src.setData({
-      type: 'Feature',
-      properties: {},
-      geometry: { type: 'LineString', coordinates: coords.length > 1 ? coords : [] },
-    });
+    if (!this.track || !this.map.getLayer('done-line')) return;
+    this.map.setPaintProperty('done-line', 'line-gradient', doneGradient(d / this.track.stats.distance));
+  }
+
+  // Pendant le parcours : bornes kilométriques retirées (moins de marqueurs à recalculer à chaque image)
+  // et caméra calée sur nos altitudes lissées plutôt que sur les tuiles de relief en cours de chargement
+  setRideMode(on) {
+    for (const m of this.kmMarkers) on ? m.remove() : m.addTo(this.map);
+    this.map.setCenterClampedToGround(!on);
   }
 
   // Noms des lieux : affichés seulement à l'approche du point p (et juste après l'avoir passé)
@@ -333,6 +361,7 @@ export class TrailMap {
     this.markers.forEach((m) => m.remove());
     this.markers = [];
     this.poiMarkers = [];
+    this.kmMarkers = [];
     const { track } = this;
     const add = (el, lngLat, anchor = 'bottom') => {
       const m = new maplibregl.Marker({ element: el, anchor }).setLngLat(lngLat).addTo(this.map);
@@ -348,7 +377,7 @@ export class TrailMap {
       const el = document.createElement('div');
       el.className = 'km';
       el.textContent = `${d / 1000} km`;
-      add(el, [s.lon, s.lat], 'center');
+      this.kmMarkers.push(add(el, [s.lon, s.lat], 'center'));
     }
 
     // Départ / arrivée
@@ -446,10 +475,17 @@ export class TrailMap {
       this.cursorShown = true;
     }
     if (this.track) {
-      const q = pointAt(this.track, Math.min(p.d + 25, this.track.stats.distance));
+      const q = pointAt(this.track, Math.min(p.d + 60, this.track.stats.distance));
       const a = this.map.project([p.lon, p.lat]);
       const b = this.map.project([q.lon, q.lat]);
-      if (Math.abs(b.x - a.x) > 1.5) this.cursorEl.classList.toggle('flip', b.x < a.x);
+      // Hystérésis : on ne retourne le bouquetin que si le sens est net et stable (évite le clignotement)
+      const now = performance.now();
+      const left = b.x < a.x;
+      if (Math.abs(b.x - a.x) > 4 && left !== this.facingLeft && now - (this.lastFlip || 0) > 500) {
+        this.facingLeft = left;
+        this.lastFlip = now;
+        this.cursorEl.classList.toggle('flip', left);
+      }
     }
   }
 

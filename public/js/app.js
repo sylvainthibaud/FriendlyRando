@@ -20,12 +20,14 @@ let catalogue = [];
 let state = 'lobby';
 
 // Suivi de la visite en cours (pour détecter les passages entre deux images)
-const run = { lastD: 0, lastDoneUpdate: 0 };
+const run = { lastD: 0, lastSlowUpdate: 0, next: null };
 
 function setState(s) {
+  const wasRiding = state !== 'lobby';
   state = s;
   document.body.className = `state-${s}`;
   trailMap.setWalking(s === 'playing');
+  if (wasRiding !== (s !== 'lobby')) trailMap.setRideMode(s !== 'lobby');
 }
 
 // ---------- Carte, profil, visite ----------
@@ -139,44 +141,67 @@ function renderBriefing() {
   }
 
   $('#hud-total').textContent = `/ ${km1(s.distance)} km`;
+  $('#hud-up-total').textContent = `/ ${fmtM(s.up)}`;
 }
 
 // ---------- Affichage pendant la visite ----------
+// Les textes ne sont réécrits que s'ils changent : moins de travail pour le navigateur à chaque image
+const shown = new Map();
+function setText(sel, value) {
+  if (shown.get(sel) === value) return;
+  shown.set(sel, value);
+  $(sel).textContent = value;
+}
+function setProp(sel, key, value) {
+  const id = `${sel}|${key}`;
+  if (shown.get(id) === value) return;
+  shown.set(id, value);
+  if (key === 'class') $(sel).className = value;
+  else if (key === 'width') $(sel).style.width = value;
+  else $(sel).setAttribute(key, value);
+}
+
 function updateHUD(p) {
   const energy = track.samples[p.i].energy;
   const t = terrain(p.slope);
 
-  $('#hud-km').textContent = km1(p.d);
-  $('#hud-clock').textContent = clock(p.t);
-  $('#hud-alt').textContent = Math.round(p.ele).toLocaleString('fr-FR');
-  $('#hud-energy').textContent = energyWord(energy);
-  $('#hud-energybar').style.width = `${Math.max(4, energy)}%`;
-  $('#energy').className = `energy ${energy < 35 ? 'low' : energy < 60 ? 'mid' : energy < 85 ? 'high' : 'max'}`;
-  $('#hud-speed').textContent = p.kmh.toLocaleString('fr-FR', { maximumFractionDigits: 1, minimumFractionDigits: 1 });
-  $('#hud-speedarc').setAttribute('stroke-dasharray', `${Math.min(100, (p.kmh / 6) * 100)} 100`);
-  $('#hud-terrain-emoji').textContent = t.emoji;
-  $('#hud-terrain').textContent = t.text;
-  $('#hud-terrain').className = `tone-${t.tone}`;
+  setText('#hud-km', km1(p.d));
+  setText('#hud-clock', clock(p.t));
+  setText('#hud-alt', Math.round(p.ele).toLocaleString('fr-FR'));
+  setText('#hud-up', Math.round(p.up).toLocaleString('fr-FR'));
+  setText('#hud-energy', energyWord(energy));
+  setProp('#hud-energybar', 'width', `${Math.round(Math.max(4, energy))}%`);
+  setProp('#energy', 'class', `energy ${energy < 35 ? 'low' : energy < 60 ? 'mid' : energy < 85 ? 'high' : 'max'}`);
+  setText('#hud-speed', p.kmh.toLocaleString('fr-FR', { maximumFractionDigits: 1, minimumFractionDigits: 1 }));
+  setProp('#hud-speedarc', 'stroke-dasharray', `${Math.round(Math.min(100, (p.kmh / 6) * 100))} 100`);
+  setText('#hud-terrain-emoji', t.emoji);
+  setText('#hud-terrain', t.text);
+  setProp('#hud-terrain', 'class', `tone-${t.tone}`);
 
-  // Prochain point de passage
+  // Prochain point de passage : la carte n'est reconstruite que lorsqu'il change
   const next = ride.checkpoints.find((c) => c.d > p.d + 5) || { icon: '🏁', name: track.loop ? 'Retour au départ' : 'Arrivée', d: track.stats.distance };
-  const nextEle = pointAt(track, next.d).ele;
-  $('#next-stop').innerHTML = `<span class="ns-ico">${next.icon}</span><div><small>Prochain passage</small><b></b>
-    <span class="ns-meta">dans ${km1(next.d - p.d)} km · ${fmtM(nextEle)} · vers ${clock(timeAt(next.d))}</span></div>`;
-  $('#next-stop b').textContent = next.name;
+  if (run.next !== next.d) {
+    run.next = next.d;
+    $('#next-stop').innerHTML = `<span class="ns-ico">${next.icon}</span><div><small>Prochain passage</small><b></b><span class="ns-meta"></span></div>`;
+    $('#next-stop b').textContent = next.name;
+    shown.delete('#next-stop .ns-meta');
+  }
+  setText('#next-stop .ns-meta', `dans ${km1(next.d - p.d)} km · ${fmtM(pointAt(track, next.d).ele)} · vers ${clock(timeAt(next.d))}`);
 }
 
 function onFrame(p) {
   if (state === 'lobby') return;
+  // À chaque image : le bouquetin et le curseur du profil (fluides)
   trailMap.setCursor(p);
-  trailMap.setNear(p);
   profile.setProgress(p.d);
-  updateHUD(p);
 
+  // 10 fois par seconde : textes, traînée dorée, noms des lieux (largement suffisant pour l'œil)
   const now = performance.now();
-  if (now - run.lastDoneUpdate > 150) {
+  if (now - run.lastSlowUpdate > 100) {
+    run.lastSlowUpdate = now;
+    updateHUD(p);
     trailMap.setDone(p.d);
-    run.lastDoneUpdate = now;
+    trailMap.setNear(p);
   }
 
   // Points de passage franchis depuis la dernière image
@@ -191,6 +216,8 @@ function onFrame(p) {
 
 function resetRun(d) {
   run.lastD = d;
+  run.next = null;
+  run.lastSlowUpdate = 0;
   trailMap.setPassed(d);
   trailMap.setDone(d);
   return pointAt(track, d);
@@ -427,6 +454,9 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && (state === 'playing' || state === 'paused')) { e.preventDefault(); fly.toggle(); }
   if (e.code === 'Escape' && state !== 'lobby') backToLobby();
 });
+
+// Accès console pour le débogage : ajouter ?debug à l'adresse
+if (new URLSearchParams(location.search).has('debug')) window.friendly = { trailMap, fly, profile };
 
 // ---------- Démarrage ----------
 (async () => {

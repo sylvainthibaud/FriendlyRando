@@ -31,15 +31,15 @@
     </div>
     <div class="topbar-right">
       <div class="segmented mapmode" data-basemap-switch>
-        <button type="button" data-base="satellite" class="active">🛰️ <span class="txt">Satellite</span></button>
-        <button type="button" data-base="game">🎮 <span class="txt">Rendu jeu</span></button>
+        <button type="button" data-base="satellite">🛰️ <span class="txt">Satellite</span></button>
+        <button type="button" data-base="game" class="active">🎮 <span class="txt">Rendu jeu</span></button>
       </div>
       <button id="btn-settings" class="icon-btn" type="button" title="Réglages de la carte">⚙️</button>
       <div id="settings" class="menu settings" hidden>
         <h3>Fond de carte</h3>
         <div class="segmented" data-basemap-switch>
-          <button type="button" data-base="satellite" class="active">Satellite</button>
-          <button type="button" data-base="game">Jeu</button>
+          <button type="button" data-base="satellite">Satellite</button>
+          <button type="button" data-base="game" class="active">Jeu</button>
           <button type="button" data-base="plan">Plan IGN</button>
           <button type="button" data-base="topo">Topo</button>
         </div>
@@ -87,8 +87,9 @@
   <div class="hud">
     <div class="hud-top">
       <div class="pill"><span class="pill-ico">🥾</span><b id="hud-km">0,0</b><small id="hud-total">/ 0 km</small></div>
-      <div class="pill"><span class="pill-ico">🕗</span><b id="hud-clock">08:30</b></div>
-      <div class="pill"><span class="pill-ico">⛰️</span><b id="hud-alt">0</b><small>m</small></div>
+      <div class="pill pill-clock"><span class="pill-ico">🕗</span><b id="hud-clock">08:30</b></div>
+      <div class="pill pill-alt"><span class="pill-ico">⛰️</span><b id="hud-alt">0</b><small>m</small></div>
+      <div class="pill pill-up" title="Dénivelé positif cumulé"><span class="pill-ico">↗</span><small>D+</small><b id="hud-up">0</b><small id="hud-up-total">/ 0 m</small></div>
     </div>
 
     <div id="next-stop" class="next-stop"></div>
@@ -121,7 +122,7 @@
         <button type="button" data-speed="4">x4</button>
       </div>
       <button id="btn-camera" class="ctl" type="button" title="Changer de caméra">🚁 <span>Drone</span></button>
-      <button id="btn-mapmode" class="ctl" type="button" title="Satellite / rendu jeu">🎮</button>
+      <button id="btn-mapmode" class="ctl" type="button" title="Passer en satellite">🛰️</button>
       <button id="btn-quit" class="ctl" type="button" title="Revenir à la présentation">✖</button>
     </div>
 

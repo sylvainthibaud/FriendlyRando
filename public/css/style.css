@@ -373,6 +373,8 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .pill b { font-family: var(--display); font-weight: 400; font-size: 22px; font-variant-numeric: tabular-nums; }
 .pill small { color: var(--muted); font-weight: 800; }
 .pill-ico { font-size: 18px; }
+.pill-up .pill-ico { color: var(--green); font-weight: 900; }
+.pill-up b { color: var(--yellow); }
 
 .next-stop {
   position: fixed;
@@ -764,6 +766,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .pill b { font-size: 17px; }
   .pill-ico { font-size: 14px; }
   .pill small { font-size: 11px; }
+  .pill-clock { display: none; }
   .next-stop { top: 54px; padding: 5px 10px 5px 8px; }
   .next-stop .ns-ico { font-size: 20px; }
 

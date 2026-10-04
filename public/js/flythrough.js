@@ -49,18 +49,26 @@ export class Flythrough {
     };
   }
 
-  // Lance (ou reprend) la partie. intro : plongée de la caméra vers le départ.
+  smoothedView(d) {
+    const pts = [-120, -90, -60, -30, 0, 30, 60, 90, 120].map((k) => pointAt(this.track, d + k));
+    const avg = (key) => pts.reduce((sum, q) => sum + q[key], 0) / pts.length;
+    return { lon: avg('lon'), lat: avg('lat'), ele: avg('ele') };
+  }
+
+  // Lance (ou reprend) le parcours. intro : plongée de la caméra vers le départ.
   play({ intro = false, introMs = 3200 } = {}) {
     if (!this.track) return;
     if (this.d >= this.track.stats.distance - 1) this.d = 0;
     const p = pointAt(this.track, this.d);
-    this.bearing = bearing(p, pointAt(this.track, this.d + this.camera.ahead));
+    const view = this.smoothedView(this.d);
+    this.bearing = bearing(view, pointAt(this.track, this.d + this.camera.ahead));
+    this.kmh = p.kmh;
     this.playing = true;
     this.onStateChange?.(true);
     this.onFrame?.(p);
 
     const ms = intro ? introMs : 1200;
-    const cam = this.cameraAt(p);
+    const cam = this.cameraAt(view);
     intro ? this.tm.map.flyTo({ ...cam, duration: ms, curve: 1.8, essential: true }) : this.tm.map.easeTo({ ...cam, duration: ms });
     clearTimeout(this.startTimer);
     this.startTimer = setTimeout(() => {
@@ -74,13 +82,18 @@ export class Flythrough {
     const dt = Math.min(0.25, (now - this.last) / 1000);
     this.last = now;
     const total = this.track.stats.distance;
+    // Vitesse lissée : pas d'à-coups quand la pente change
     const here = pointAt(this.track, this.d);
-    this.d = Math.min(total, this.d + (here.kmh / 3.6) * dt * this.timeScale * this.speed);
+    this.kmh += (here.kmh - this.kmh) * (1 - Math.exp(-dt * 3));
+    this.d = Math.min(total, this.d + (this.kmh / 3.6) * dt * this.timeScale * this.speed);
 
+    // La caméra vise une position moyennée sur ±120 m : elle ne suit pas chaque lacet du sentier
     const p = pointAt(this.track, this.d);
-    const target = bearing(p, pointAt(this.track, this.d + this.camera.ahead));
-    this.bearing = lerpAngle(this.bearing, target, 1 - Math.exp(-dt * 1.1));
-    this.tm.map.jumpTo(this.cameraAt(p));
+    const view = this.smoothedView(this.d);
+    const target = bearing(view, pointAt(this.track, this.d + this.camera.ahead));
+    this.bearing = lerpAngle(this.bearing, target, 1 - Math.exp(-dt * 1.5));
+    this.tm.map.jumpTo(this.cameraAt(view));
+    p.kmh = this.kmh;
     this.onFrame?.(p);
 
     if (this.d >= total) {
