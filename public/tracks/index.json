@@ -7,5 +7,14 @@
     "description": "Boucle classique du Parc national des Pyrénées au départ du lac de Bious-Artigues. Montée par le lac Roumassot et le lac du Miey jusqu'au refuge d'Ayous, au bord du lac Gentau où se reflète le Pic du Midi d'Ossau, puis retour par les lacs Bersau et Castérau et le plateau de Bious.",
     "view": { "bearing": 200, "pitch": 60 },
     "startTime": "08:30"
+  },
+  {
+    "id": "pic-ayous-aas-de-bielle",
+    "name": "Pic d'Ayous par le col d'Aas de Bielle",
+    "region": "Vallée d'Ossau · Pyrénées-Atlantiques",
+    "file": "tracks/pic-ayous-aas-de-bielle.gpx",
+    "description": "Boucle au départ du lac de Bious-Artigues. Montée par la cabane et le col d'Aas de Bielle jusqu'au sommet du Pic d'Ayous (2 288 m), face au Pic du Midi d'Ossau, puis descente par le col d'Ayous vers le refuge et les lacs Gentau, du Miey et Roumassot, et retour par le plateau de Bious.",
+    "view": { "bearing": 210, "pitch": 60 },
+    "startTime": "08:30"
   }
 ]
