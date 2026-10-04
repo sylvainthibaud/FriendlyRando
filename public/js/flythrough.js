@@ -1,10 +1,14 @@
-// Survol animé : la caméra suit le randonneur le long du tracé.
+// Partie en cours : le randonneur avance le long du tracé à une vitesse qui dépend de la pente,
+// et la caméra le suit.
 import { pointAt, bearing } from './analyze.js';
 
-const DURATION_S = 75; // durée d'un survol complet à vitesse "Normal"
-const PITCH = 62;
-const ZOOM = 14.7;
-const LOOK_AHEAD = 350; // m
+const DURATION_S = 90; // durée d'une partie complète à vitesse x1
+
+export const CAMERAS = {
+  drone: { label: 'Drone', icon: '🚁', pitch: 62, zoom: 14.7, ahead: 350 },
+  epaule: { label: 'Épaule', icon: '🎮', pitch: 72, zoom: 15.6, ahead: 180 },
+  aigle: { label: 'Aigle', icon: '🦅', pitch: 45, zoom: 13.7, ahead: 600 },
+};
 
 function lerpAngle(a, b, t) {
   const diff = ((((b - a) % 360) + 540) % 360) - 180;
@@ -12,12 +16,14 @@ function lerpAngle(a, b, t) {
 }
 
 export class Flythrough {
-  constructor(trailMap, { onFrame, onStateChange } = {}) {
+  constructor(trailMap, { onFrame, onStateChange, onEnd } = {}) {
     this.tm = trailMap;
     this.onFrame = onFrame;
     this.onStateChange = onStateChange;
+    this.onEnd = onEnd;
     this.playing = false;
     this.speed = 1;
+    this.camera = CAMERAS.drone;
     this.d = 0;
     this.raf = null;
   }
@@ -25,31 +31,42 @@ export class Flythrough {
   setTrack(track) {
     this.stop();
     this.track = track;
-    this.d = 0;
+    // secondes de rando simulées par seconde réelle
+    this.timeScale = (track.stats.hours * 3600) / DURATION_S;
   }
 
   setSpeed(s) { this.speed = s; }
+  setCamera(key) { this.camera = CAMERAS[key]; }
 
-  toggle() { this.playing ? this.pause() : this.play(); }
+  cameraAt(p) {
+    const c = this.camera;
+    return {
+      center: [p.lon, p.lat],
+      elevation: this.tm.elevation(p.ele),
+      bearing: this.bearing,
+      pitch: this.tm.is3D ? c.pitch : 0,
+      zoom: c.zoom,
+    };
+  }
 
-  play(fromD) {
+  // Lance (ou reprend) la partie. intro : plongée de la caméra vers le départ.
+  play({ intro = false, introMs = 3200 } = {}) {
     if (!this.track) return;
-    const total = this.track.stats.distance;
-    if (fromD !== undefined) this.d = fromD;
-    if (this.d >= total - 1) this.d = 0;
-
+    if (this.d >= this.track.stats.distance - 1) this.d = 0;
     const p = pointAt(this.track, this.d);
-    this.bearing = bearing(p, pointAt(this.track, this.d + LOOK_AHEAD));
+    this.bearing = bearing(p, pointAt(this.track, this.d + this.camera.ahead));
     this.playing = true;
     this.onStateChange?.(true);
-
-    const { map } = this.tm;
-    map.easeTo({ center: [p.lon, p.lat], elevation: this.tm.elevation(p.ele), bearing: this.bearing, pitch: PITCH, zoom: ZOOM, duration: 1500 });
     this.onFrame?.(p);
+
+    const ms = intro ? introMs : 1200;
+    const cam = this.cameraAt(p);
+    intro ? this.tm.map.flyTo({ ...cam, duration: ms, curve: 1.8, essential: true }) : this.tm.map.easeTo({ ...cam, duration: ms });
+    clearTimeout(this.startTimer);
     this.startTimer = setTimeout(() => {
       this.last = performance.now();
       this.raf = requestAnimationFrame((t) => this.frame(t));
-    }, 1550);
+    }, ms + 50);
   }
 
   frame(now) {
@@ -57,21 +74,24 @@ export class Flythrough {
     const dt = Math.min(0.25, (now - this.last) / 1000);
     this.last = now;
     const total = this.track.stats.distance;
-    this.d = Math.min(total, this.d + dt * (total / DURATION_S) * this.speed);
+    const here = pointAt(this.track, this.d);
+    this.d = Math.min(total, this.d + (here.kmh / 3.6) * dt * this.timeScale * this.speed);
 
     const p = pointAt(this.track, this.d);
-    const target = bearing(p, pointAt(this.track, this.d + LOOK_AHEAD));
+    const target = bearing(p, pointAt(this.track, this.d + this.camera.ahead));
     this.bearing = lerpAngle(this.bearing, target, 1 - Math.exp(-dt * 1.1));
-    this.tm.map.jumpTo({ center: [p.lon, p.lat], elevation: this.tm.elevation(p.ele), bearing: this.bearing, pitch: PITCH, zoom: ZOOM });
+    this.tm.map.jumpTo(this.cameraAt(p));
     this.onFrame?.(p);
 
     if (this.d >= total) {
       this.pause();
-      setTimeout(() => this.tm.overview(), 600);
+      this.onEnd?.();
       return;
     }
     this.raf = requestAnimationFrame((t) => this.frame(t));
   }
+
+  toggle() { this.playing ? this.pause() : this.play(); }
 
   pause() {
     if (!this.playing) return;

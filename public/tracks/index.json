@@ -5,6 +5,7 @@
     "region": "Vallée d'Ossau · Pyrénées-Atlantiques",
     "file": "tracks/tour-lacs-ayous.gpx",
     "description": "Boucle classique du Parc national des Pyrénées au départ du lac de Bious-Artigues. Montée par le lac Roumassot et le lac du Miey jusqu'au refuge d'Ayous, au bord du lac Gentau où se reflète le Pic du Midi d'Ossau, puis retour par les lacs Bersau et Castérau et le plateau de Bious.",
-    "view": { "bearing": 200, "pitch": 60 }
+    "view": { "bearing": 200, "pitch": 60 },
+    "startTime": "08:30"
   }
 ]

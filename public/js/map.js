@@ -99,14 +99,15 @@ export class TrailMap {
       attributionControl: { compact: true },
     });
     this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-    this.map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
     this.markers = [];
+    this.poiMarkers = [];
     this.exaggeration = 1.3;
     this.is3D = true;
 
     const el = document.createElement('div');
-    el.className = 'hiker';
-    this.cursor = new maplibregl.Marker({ element: el });
+    el.className = 'player';
+    el.innerHTML = `<div class="player-tag">TOI</div><div class="player-avatar">🥾</div>`;
+    this.cursor = new maplibregl.Marker({ element: el, anchor: 'bottom' });
 
     this.ready = new Promise((resolve) => this.map.on('load', resolve)).then(() => this.addTrackLayers());
 
@@ -131,11 +132,25 @@ export class TrailMap {
   addTrackLayers() {
     const empty = { type: 'FeatureCollection', features: [] };
     this.map.addSource('track', { type: 'geojson', data: empty, lineMetrics: true });
+    this.map.addSource('done', { type: 'geojson', data: empty });
+    const round = { 'line-join': 'round', 'line-cap': 'round' };
+    this.map.addLayer({
+      id: 'track-glow',
+      type: 'line',
+      source: 'track',
+      layout: round,
+      paint: {
+        'line-color': '#8af3ff',
+        'line-opacity': 0.55,
+        'line-blur': 6,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 11, 12, 16, 26],
+      },
+    });
     this.map.addLayer({
       id: 'track-casing',
       type: 'line',
       source: 'track',
-      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      layout: round,
       paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 6, 16, 13] },
     });
     this.map.addLayer({
@@ -144,6 +159,17 @@ export class TrailMap {
       source: 'track',
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: { 'line-color': '#1f6f4a', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 3.5, 16, 8] },
+    });
+    // Chemin déjà parcouru pendant la partie : traînée dorée
+    this.map.addLayer({
+      id: 'done-line',
+      type: 'line',
+      source: 'done',
+      layout: round,
+      paint: {
+        'line-color': '#ffd23f',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 11, 5, 16, 10],
+      },
     });
     this.map.addLayer({
       id: 'track-hit',
@@ -177,12 +203,34 @@ export class TrailMap {
     this.map.setPaintProperty('track-line', 'line-gradient', ['interpolate', ['linear'], ['line-progress'], ...stops]);
 
     this.renderMarkers();
+    this.setDone(0);
     this.overview(false);
+  }
+
+  // Trace dorée du départ jusqu'à la distance d
+  setDone(d) {
+    const src = this.map.getSource('done');
+    if (!src || !this.track) return;
+    const coords = this.track.samples.filter((s) => s.d <= d).map((s) => [s.lon, s.lat]);
+    src.setData({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: coords.length > 1 ? coords : [] },
+    });
+  }
+
+  // Points de passage atteints (d = distance parcourue, null = tous visibles normalement)
+  setFound(d) {
+    for (const { el, poi } of this.poiMarkers) {
+      el.classList.toggle('found', d !== null && poi.onTrack && poi.d <= d);
+      el.classList.toggle('locked', d !== null && poi.onTrack && poi.d > d);
+    }
   }
 
   renderMarkers() {
     this.markers.forEach((m) => m.remove());
     this.markers = [];
+    this.poiMarkers = [];
     const { track } = this;
     const add = (el, lngLat, anchor = 'bottom') => {
       const m = new maplibregl.Marker({ element: el, anchor }).setLngLat(lngLat).addTo(this.map);
@@ -196,7 +244,7 @@ export class TrailMap {
       const s = track.samples[Math.round(d / 10)];
       if (!s) continue;
       const el = document.createElement('div');
-      el.className = 'km';
+      el.className = (d / step) % 2 ? 'km odd' : 'km';
       el.textContent = `${d / 1000} km`;
       add(el, [s.lon, s.lat], 'center');
     }
@@ -233,6 +281,7 @@ export class TrailMap {
         this.flyToPoint(p);
       });
       add(el, [p.lon, p.lat]);
+      this.poiMarkers.push({ el, poi: p });
     }
   }
 
@@ -242,9 +291,10 @@ export class TrailMap {
     return b;
   }
 
+  // Marges laissées libres par l'interface posée sur la carte (fiche mission, profil…)
   padding() {
-    const mobile = window.innerWidth <= 900;
-    return mobile ? { top: 40, bottom: 40, left: 30, right: 30 } : { top: 70, bottom: 250, left: 70, right: 70 };
+    if (this.paddingFn) return this.paddingFn();
+    return { top: 70, bottom: 250, left: 70, right: 70 };
   }
 
   overview(animate = true) {

@@ -93,6 +93,11 @@ function dinHours(meters, up, down) {
   return Math.max(h, v) + Math.min(h, v) / 2;
 }
 
+// Fonction de Tobler : ~5 km/h à plat, plus lent en montée comme en forte descente
+export function walkingSpeed(slopePct) {
+  return 6 * Math.exp(-3.5 * Math.abs(slopePct / 100 + 0.05));
+}
+
 function difficulty(km, up) {
   const effort = km + up / 100;
   if (effort < 12) return { label: 'Facile', color: '#2e9e5b', bg: '#e3f4ea' };
@@ -118,21 +123,30 @@ export function analyzeTrack(points, waypoints = []) {
   let up = 0;
   let down = 0;
   let ref = eles[0];
-  for (const e of eles) {
+  samples.forEach((s) => {
+    const e = s.ele;
     if (e - ref > 2) { up += e - ref; ref = e; }
     else if (ref - e > 2) { down += ref - e; ref = e; }
-  }
+    s.up = up; // dénivelé positif cumulé depuis le départ
+  });
 
-  // Temps cumulé : réparti segment par segment, recalé sur le total DIN
+  // Vitesse de marche selon la pente (fonction de Tobler, ramenée à un rythme de randonneur)
+  samples.forEach((s) => (s.kmh = walkingSpeed(s.slope)));
+
+  // Temps cumulé : réparti segment par segment selon la vitesse, recalé sur le total DIN
   let raw = 0;
   samples[0].t = 0;
   for (let i = 1; i < samples.length; i++) {
-    const dz = samples[i].ele - samples[i - 1].ele;
-    raw += dinHours(samples[i].d - samples[i - 1].d, Math.max(0, dz), Math.max(0, -dz));
+    const kmh = (samples[i].kmh + samples[i - 1].kmh) / 2;
+    raw += (samples[i].d - samples[i - 1].d) / 1000 / kmh;
     samples[i].t = raw;
   }
   const hours = dinHours(total, up, down);
-  samples.forEach((s) => (s.t = raw ? (s.t / raw) * hours : 0));
+  const pace = raw && hours ? raw / hours : 1;
+  samples.forEach((s) => {
+    s.t = s.t / pace;
+    s.kmh *= pace; // vitesse cohérente avec le temps affiché
+  });
 
   const maxEle = Math.max(...eles);
   const minEle = Math.min(...eles);
@@ -189,6 +203,9 @@ export function pointAt(track, d) {
     ele: a.ele + (b.ele - a.ele) * t,
     slope: a.slope + (b.slope - a.slope) * t,
     t: a.t + (b.t - a.t) * t,
+    kmh: a.kmh + (b.kmh - a.kmh) * t,
+    up: a.up + (b.up - a.up) * t,
+    i,
   };
 }
 

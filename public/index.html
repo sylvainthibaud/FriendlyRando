@@ -2,99 +2,160 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FriendlyRando — tracés de rando en 3D</title>
-  <meta name="description" content="Visualisez vos randonnées en 3D : tracé GPX, relief, profil altimétrique, dénivelé et temps de marche.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FriendlyRando — ta rando en mode jeu</title>
+  <meta name="description" content="Joue ta prochaine rando en 3D : relief, défis, énergie, XP et survol du parcours à partir d'une trace GPX.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛰️</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
   <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
   <link href="css/style.css" rel="stylesheet">
 </head>
-<body>
+<body class="state-lobby">
+  <div id="map"></div>
+
+  <!-- Barre du haut -->
   <header class="topbar">
-    <a class="brand" href="./">⛰️ <span>FriendlyRando</span></a>
-    <div class="topbar-actions">
-      <label class="visually-hidden" for="rando-select">Choisir une rando</label>
-      <select id="rando-select"></select>
-      <button id="btn-upload" class="btn btn-ghost" type="button">📂 Charger un GPX</button>
+    <div class="mission-picker">
+      <button id="btn-mission" class="chip" type="button" aria-haspopup="true">
+        <span class="chip-kicker">Mission</span>
+        <span id="mission-name">Chargement…</span>
+        <span class="chev">▾</span>
+      </button>
+      <div id="mission-menu" class="menu" hidden>
+        <div id="mission-list"></div>
+        <button id="btn-upload" class="menu-item" type="button">📂 Importer mon fichier GPX</button>
+      </div>
       <input id="file-input" type="file" accept=".gpx,application/gpx+xml" hidden>
     </div>
-  </header>
-
-  <main class="layout">
-    <aside class="panel">
-      <section class="intro">
-        <h1 id="rando-title">Chargement…</h1>
-        <p id="rando-region" class="region"></p>
-        <p id="rando-desc" class="desc"></p>
-      </section>
-
-      <section class="stats" id="stats" aria-label="Chiffres clés"></section>
-
-      <section class="actions">
-        <button id="btn-fly" class="btn btn-primary" type="button">▶ Survoler la rando</button>
-        <div class="row">
-          <button id="btn-overview" class="btn" type="button">🔭 Vue d'ensemble</button>
-          <button id="btn-3d" class="btn" type="button">🗺️ Vue carte</button>
-        </div>
-        <div class="row speed">
-          <span>Vitesse du survol</span>
-          <div class="segmented" id="speed">
-            <button type="button" data-speed="0.5">Lent</button>
-            <button type="button" data-speed="1" class="active">Normal</button>
-            <button type="button" data-speed="2">Rapide</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="settings">
-        <h2>Carte</h2>
+    <div class="topbar-right">
+      <button id="btn-sound" class="icon-btn" type="button" title="Son">🔊</button>
+      <button id="btn-settings" class="icon-btn" type="button" title="Réglages de la carte">⚙️</button>
+      <div id="settings" class="menu settings" hidden>
+        <h3>Fond de carte</h3>
         <div class="segmented" id="basemap">
           <button type="button" data-base="satellite" class="active">Satellite</button>
           <button type="button" data-base="plan">Plan IGN</button>
           <button type="button" data-base="topo">Topo</button>
         </div>
-        <label class="slider">
-          <span>Accentuer le relief <b id="exag-value">×1,3</b></span>
-          <input id="exaggeration" type="range" min="1" max="2.5" step="0.1" value="1.3">
-        </label>
-        <div class="legend">
-          <span class="legend-title">Pente du sentier</span>
-          <div class="legend-bar"></div>
-          <div class="legend-labels"><span>0 %</span><span>10 %</span><span>20 %</span><span>30 %+</span></div>
+        <h3>Montagnes <b id="exag-value">×1,3</b></h3>
+        <input id="exaggeration" type="range" min="1" max="2.5" step="0.1" value="1.3" aria-label="Accentuer le relief">
+        <button id="btn-3d" class="menu-item" type="button">🗺️ Passer en vue carte (2D)</button>
+        <p class="credits">Fonds © IGN, © Esri, © OpenTopoMap · Relief Mapzen/AWS · Sentiers © OpenStreetMap</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Écran de mission (avant de jouer) -->
+  <aside id="briefing" class="briefing">
+    <div class="briefing-scroll">
+      <article id="item-card" class="item-card">
+        <div class="rarity-row">
+          <span id="rarity" class="rarity">Rare</span>
+          <span id="rarity-level" class="rarity-level"></span>
         </div>
+        <h1 id="rando-title">…</h1>
+        <p id="rando-region" class="region"></p>
+        <div id="card-stats" class="card-stats"></div>
+      </article>
+      <p id="rando-desc" class="desc" title="Lire la suite"></p>
+      <section class="quests-box">
+        <h2>🎯 Défis</h2>
+        <ul id="quests" class="quests"></ul>
       </section>
+    </div>
+    <div class="briefing-actions">
+      <button id="btn-play" class="btn-play" type="button"><span>Jouer</span></button>
+      <button id="btn-overview" class="btn-link" type="button">🔭 Vue d'ensemble</button>
+    </div>
+  </aside>
 
-      <section class="steps">
-        <h2>Étapes</h2>
-        <ol id="steps"></ol>
-      </section>
-
-      <footer class="credits">
-        Fonds : © IGN, © Esri, © OpenTopoMap · Relief : Mapzen/AWS Terrain Tiles · Tracés : © contributeurs OpenStreetMap
-      </footer>
-    </aside>
-
-    <section class="mapwrap">
-      <div id="map"></div>
-      <div class="profile-card">
-        <div class="profile-head">
-          <strong>Profil altimétrique</strong>
-          <span id="profile-info" class="profile-info">Survolez le profil ou le tracé</span>
-        </div>
-        <div class="profile-canvas-wrap">
-          <canvas id="profile"></canvas>
+  <!-- HUD pendant la partie -->
+  <div class="hud">
+    <div class="hud-top">
+      <div class="pill"><span class="pill-ico">🥾</span><b id="hud-km">0,0</b><small id="hud-total">/ 0 km</small></div>
+      <div class="pill"><span class="pill-ico">🕗</span><b id="hud-clock">08:30</b></div>
+      <div class="pill pill-xp">
+        <span class="lvl" title="Niveau"><small>NIV</small><b id="hud-level">1</b></span>
+        <div class="xp-col">
+          <div><b id="hud-xp">0</b> <small>XP</small></div>
+          <div class="xp-bar"><i id="hud-xpbar"></i></div>
         </div>
       </div>
-    </section>
-  </main>
+    </div>
 
-  <div id="dropzone" class="dropzone" hidden>
-    <div>📍 Déposez votre fichier GPX ici</div>
+    <ul id="hud-quests" class="quests hud-quests"></ul>
+
+    <div class="vitals">
+      <div class="energy" id="energy">
+        <div class="energy-head"><span>⚡ Énergie</span><b id="hud-energy">100</b></div>
+        <div class="energy-bar"><i id="hud-energybar"></i></div>
+      </div>
+      <div class="gauges">
+        <div class="speedo">
+          <svg viewBox="0 0 100 58" aria-hidden="true">
+            <path d="M10 52 A40 40 0 0 1 90 52" class="speedo-bg" pathLength="100"/>
+            <path d="M10 52 A40 40 0 0 1 90 52" class="speedo-fg" id="hud-speedarc" pathLength="100" stroke-dasharray="0 100"/>
+          </svg>
+          <div class="speedo-val"><b id="hud-speed">0</b><small>km/h</small></div>
+        </div>
+        <div class="terrain" id="terrain">
+          <span id="hud-terrain-emoji" class="terrain-emoji">🙂</span>
+          <div>
+            <b id="hud-terrain">Tranquille</b>
+            <small id="hud-alt">⛰️ 0 m</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="btn-pause" class="ctl ctl-main" type="button" title="Pause">⏸</button>
+      <div class="segmented speed" id="speed" title="Vitesse du jeu">
+        <button type="button" data-speed="1" class="active">x1</button>
+        <button type="button" data-speed="2">x2</button>
+        <button type="button" data-speed="4">x4</button>
+      </div>
+      <button id="btn-camera" class="ctl" type="button" title="Changer de caméra">🚁 <span>Drone</span></button>
+      <button id="btn-sound-2" class="ctl ctl-sound" type="button" title="Son">🔊</button>
+      <button id="btn-quit" class="ctl" type="button" title="Quitter la partie">✖</button>
+    </div>
+
+    <div class="paused-banner">⏸ Pause — appuie sur ▶ pour repartir</div>
   </div>
-  <div id="toast" class="toast" hidden></div>
+
+  <!-- Profil du parcours -->
+  <section class="trackbar">
+    <div class="trackbar-head">
+      <b>Parcours</b>
+      <span id="profile-info" class="profile-info"></span>
+    </div>
+    <div class="profile-canvas-wrap"><canvas id="profile"></canvas></div>
+  </section>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="countdown" class="countdown" hidden></div>
+
+  <!-- Écran de fin -->
+  <div id="endscreen" class="endscreen" hidden>
+    <div id="confetti" class="confetti"></div>
+    <div class="end-card">
+      <div class="end-rank">#1</div>
+      <h2 id="end-title">Rando bouclée !</h2>
+      <p id="end-sub" class="end-sub"></p>
+      <div id="end-stats" class="end-stats"></div>
+      <h3>Badges débloqués</h3>
+      <div id="end-badges" class="badges"></div>
+      <div class="end-actions">
+        <button id="btn-replay" class="btn-play btn-play-sm" type="button"><span>🔁 Rejouer</span></button>
+        <button id="btn-lobby" class="btn-ghost" type="button">🗺️ Retour à la mission</button>
+        <button class="btn-ghost" type="button" disabled title="Bientôt disponible">🎬 Exporter la vidéo · bientôt</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dropzone" class="dropzone" hidden><div>📍 Lâche ton fichier GPX ici !</div></div>
 
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script type="module" src="js/app.js"></script>

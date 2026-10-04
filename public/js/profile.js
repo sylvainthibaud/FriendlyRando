@@ -1,8 +1,9 @@
-// Profil altimétrique dessiné sur <canvas>, coloré selon la pente.
+// Profil du parcours dessiné sur <canvas>, coloré selon la pente, façon barre de progression de niveau.
 import { slopeColor } from './analyze.js';
 
-const PAD = { l: 46, r: 14, t: 38, b: 20 };
+const PAD = { l: 14, r: 14, t: 30, b: 20 }; // t réduit sur les petits écrans (voir resize)
 const nf = new Intl.NumberFormat('fr-FR');
+const FONT = 'Nunito, system-ui, sans-serif';
 
 function niceStep(range, maxTicks, steps) {
   return steps.find((s) => range / s <= maxTicks) || steps[steps.length - 1];
@@ -15,6 +16,8 @@ export class Profile {
     this.base = document.createElement('canvas');
     this.track = null;
     this.cursor = null;
+    this.progress = null;
+    this.checkpoints = [];
 
     new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
 
@@ -30,8 +33,10 @@ export class Profile {
 
   resize() {
     const box = this.canvas.parentElement.getBoundingClientRect();
-    this.w = Math.max(100, box.width);
-    this.h = Math.max(60, box.height);
+    if (!box.width || !box.height) return;
+    this.w = box.width;
+    this.h = box.height;
+    PAD.t = this.h < 100 ? 24 : 30;
     this.dpr = window.devicePixelRatio || 1;
     for (const c of [this.canvas, this.base]) {
       c.width = Math.round(this.w * this.dpr);
@@ -41,14 +46,15 @@ export class Profile {
     this.render();
   }
 
-  setTrack(track) {
+  setTrack(track, checkpoints = []) {
     this.track = track;
+    this.checkpoints = checkpoints;
     this.cursor = null;
+    this.progress = null;
     const { minEle, maxEle, distance } = track.stats;
-    const margin = Math.max(20, (maxEle - minEle) * 0.08);
-    this.yStep = niceStep(maxEle - minEle + 2 * margin, 4, [25, 50, 100, 200, 250, 500, 1000]);
-    this.yMin = Math.floor((minEle - margin) / this.yStep) * this.yStep;
-    this.yMax = Math.ceil((maxEle + margin) / this.yStep) * this.yStep;
+    const margin = Math.max(20, (maxEle - minEle) * 0.1);
+    this.yMin = minEle - margin;
+    this.yMax = maxEle + margin * 0.6;
     this.dMax = distance;
     this.drawBase();
     this.render();
@@ -56,6 +62,12 @@ export class Profile {
 
   setCursor(d) {
     this.cursor = d;
+    this.render();
+  }
+
+  // Distance parcourue pendant la partie (null hors partie)
+  setProgress(d) {
+    this.progress = d;
     this.render();
   }
 
@@ -71,29 +83,19 @@ export class Profile {
     const s = this.track.samples;
     const bottom = this.h - PAD.b;
 
-    // Grille et axes
-    ctx.font = '11px Inter, system-ui, sans-serif';
-    ctx.fillStyle = '#7b8781';
-    ctx.strokeStyle = '#e4e9e6';
-    ctx.lineWidth = 1;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    for (let e = this.yMin; e <= this.yMax; e += this.yStep) {
-      const y = Math.round(this.eToY(e)) + 0.5;
-      ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(this.w - PAD.r, y); ctx.stroke();
-      ctx.fillText(`${nf.format(e)} m`, PAD.l - 6, y);
-    }
-    const km = this.dMax / 1000;
-    const plotW = this.w - PAD.l - PAD.r;
-    const xStep = niceStep(km, Math.max(2, plotW / 60), [0.5, 1, 2, 5, 10, 20, 50]);
+    // Bornes kilométriques
+    ctx.font = `700 11px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,.55)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
+    const km = this.dMax / 1000;
+    const xStep = niceStep(km, Math.max(2, (this.w - PAD.l - PAD.r) / 55), [0.5, 1, 2, 5, 10, 20, 50]);
     for (let k = 0; k <= km + 1e-6; k += xStep) {
-      ctx.fillText(`${nf.format(k)} km`, this.dToX(k * 1000), bottom + 5);
+      ctx.textAlign = k ? 'center' : 'left';
+      ctx.fillText(k ? `${nf.format(k)} km` : 'Départ', this.dToX(k * 1000), bottom + 5);
     }
 
     // Remplissage coloré par la pente
-    ctx.globalAlpha = 0.9;
     for (let i = 1; i < s.length; i++) {
       const x0 = this.dToX(s[i - 1].d);
       const x1 = this.dToX(s[i].d) + 0.6;
@@ -105,57 +107,55 @@ export class Profile {
       ctx.lineTo(x1, bottom);
       ctx.fill();
     }
-    ctx.globalAlpha = 1;
+    // Léger dégradé sombre vers le bas pour donner du volume
+    const grad = ctx.createLinearGradient(0, PAD.t, 0, bottom);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(20,10,60,.45)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(this.dToX(0), bottom);
+    s.forEach((p) => ctx.lineTo(this.dToX(p.d), this.eToY(p.ele)));
+    ctx.lineTo(this.dToX(this.dMax), bottom);
+    ctx.fill();
 
-    // Ligne du profil
+    // Crête du profil
     ctx.beginPath();
     s.forEach((p, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, this.dToX(p.d), this.eToY(p.ele)));
-    ctx.strokeStyle = '#1d2a24';
-    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.2;
     ctx.lineJoin = 'round';
     ctx.stroke();
 
-    // Points d'intérêt : étiquettes placées par ordre d'importance sur deux lignes,
-    // en version complète si la place le permet, sinon l'icône seule, sinon rien.
-    const PRIORITY = { refuge: 0, cabane: 0, hut: 0, sommet: 1, summit: 1, peak: 1, col: 1, parking: 2, lac: 3, lake: 3 };
-    const prio = (p) => PRIORITY[p.type] ?? 4;
-    const pois = this.track.pois.filter((p) => p.onTrack).sort((a, b) => prio(a) - prio(b) || a.d - b.d);
-    const rows = [[], []];
-    const fits = (row, a, b) => rows[row].every(([c, d]) => b + 4 < c || a > d + 4);
+    // Sommet de la rando
+    const top = s.reduce((a, b) => (b.ele > a.ele ? b : a));
+    const tx = this.dToX(top.d);
+    ctx.font = `800 12px ${FONT}`;
+    ctx.textAlign = tx > this.w - 80 ? 'right' : 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText(`▲ ${nf.format(Math.round(top.ele))} m`, tx, this.eToY(top.ele) - 6);
+
+    // Points de passage : icônes sur une ligne, sans chevauchement
+    ctx.font = `15px ${FONT}`;
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.font = '600 11px Inter, system-ui, sans-serif';
-    for (const p of pois) {
-      const x = this.dToX(p.d);
-      const y = this.eToY(p.ele);
-      const candidates = [`${p.icon} ${p.name}`, p.icon];
-      let placed = null;
-      for (const label of candidates) {
-        const width = ctx.measureText(label).width + 2;
-        const lx = Math.max(2, Math.min(x - 8, this.w - PAD.r - width));
-        const row = [0, 1].find((r) => fits(r, lx, lx + width));
-        if (row !== undefined) {
-          rows[row].push([lx, lx + width]);
-          placed = { label, lx, ly: 9 + row * 15 };
-          break;
-        }
-      }
-      if (placed) {
-        ctx.strokeStyle = 'rgba(29,42,36,.35)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([2, 3]);
-        ctx.beginPath(); ctx.moveTo(x + 0.5, placed.ly + 7); ctx.lineTo(x + 0.5, y); ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = '#1d2a24';
-        ctx.fillText(placed.label, placed.lx, placed.ly);
+    let lastX = -Infinity;
+    for (const c of this.checkpoints) {
+      const x = this.dToX(c.d);
+      const y = this.eToY(c.ele);
+      ctx.strokeStyle = 'rgba(255,255,255,.35)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(x + 0.5, 20); ctx.lineTo(x + 0.5, y); ctx.stroke();
+      ctx.setLineDash([]);
+      if (x - lastX > 20) {
+        ctx.fillText(c.icon, x, 11);
+        lastX = x;
       }
       ctx.beginPath();
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
       ctx.fillStyle = '#fff';
       ctx.fill();
-      ctx.strokeStyle = '#1d2a24';
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
     }
   }
 
@@ -165,22 +165,31 @@ export class Profile {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.drawImage(this.base, 0, 0);
-    if (!this.track || this.cursor === null) return;
-
+    if (!this.track) return;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+    // Pendant la partie : ce qui reste à parcourir est assombri
+    if (this.progress !== null) {
+      const x = this.dToX(this.progress);
+      ctx.fillStyle = 'rgba(14, 8, 40, .62)';
+      ctx.fillRect(x, 0, this.w - x, this.h - PAD.b + 2);
+    }
+
+    const d = this.cursor ?? this.progress;
+    if (d === null) return;
     const s = this.track.samples;
-    const i = Math.min(s.length - 1, Math.round(this.cursor / (s[1].d - s[0].d)));
-    const x = this.dToX(this.cursor);
+    const i = Math.min(s.length - 1, Math.round(d / (s[1].d - s[0].d)));
+    const x = this.dToX(d);
     const y = this.eToY(s[i].ele);
-    ctx.strokeStyle = '#1f6f4a';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(x, PAD.t - 4); ctx.lineTo(x, this.h - PAD.b); ctx.stroke();
+    ctx.strokeStyle = '#ffd23f';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, 20); ctx.lineTo(x, this.h - PAD.b); ctx.stroke();
     ctx.beginPath();
-    ctx.arc(x, y, 6, 0, Math.PI * 2);
-    ctx.fillStyle = '#1f6f4a';
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffd23f';
     ctx.fill();
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#1b1240';
     ctx.stroke();
   }
 }
