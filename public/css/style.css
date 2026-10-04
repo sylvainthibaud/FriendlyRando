@@ -790,7 +790,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .controls .segmented button { padding: 5px 8px; }
   .ctl { height: 36px; min-width: 36px; padding: 0 6px; }
   .ctl-main { width: 44px; height: 44px; }
-  #btn-camera span { display: none; }
+  #btn-camera span, #btn-mapmode span { display: none; }
 
   .paused-banner { top: 110px; font-size: 15px; }
   .toasts { top: 112px; }

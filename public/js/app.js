@@ -398,12 +398,19 @@ $('#btn-camera').addEventListener('click', () => {
   $('#btn-camera').innerHTML = `${cam.icon} <span>${cam.label}</span>`;
 });
 
-// Fond de carte : satellite / rendu jeu (+ Plan IGN et Topo dans les réglages)
+// Fonds de carte : choix direct dans la barre du haut, bouton qui les fait défiler pendant le parcours.
+// Le dernier fond choisi est retenu pour la prochaine visite.
+const BASEMAPS = {
+  game: { icon: '🎮', label: 'Jeu' },
+  satellite: { icon: '🛰️', label: 'Satellite' },
+  plan: { icon: '🗺️', label: 'Plan IGN' },
+  topo: { icon: '⛰️', label: 'Topo' },
+};
 function setBasemap(base) {
   trailMap.setBasemap(base);
   $$('[data-basemap-switch] button').forEach((b) => b.classList.toggle('active', b.dataset.base === base));
-  $('#btn-mapmode').textContent = base === 'game' ? '🛰️' : '🎮';
-  $('#btn-mapmode').title = base === 'game' ? 'Passer en satellite' : 'Passer en rendu jeu';
+  $('#btn-mapmode').innerHTML = `${BASEMAPS[base].icon} <span>${BASEMAPS[base].label}</span>`;
+  try { localStorage.setItem('fr-basemap', base); } catch { /* stockage indisponible */ }
 }
 $$('[data-basemap-switch]').forEach((group) =>
   group.addEventListener('click', (e) => {
@@ -411,7 +418,15 @@ $$('[data-basemap-switch]').forEach((group) =>
     if (btn) setBasemap(btn.dataset.base);
   })
 );
-$('#btn-mapmode').addEventListener('click', () => setBasemap(trailMap.basemap === 'game' ? 'satellite' : 'game'));
+$('#btn-mapmode').addEventListener('click', () => {
+  const keys = Object.keys(BASEMAPS);
+  setBasemap(keys[(keys.indexOf(trailMap.basemap) + 1) % keys.length]);
+});
+trailMap.ready.then(() => {
+  let saved = null;
+  try { saved = localStorage.getItem('fr-basemap'); } catch { /* stockage indisponible */ }
+  if (saved && BASEMAPS[saved] && saved !== trailMap.basemap) setBasemap(saved);
+});
 
 $('#speed').addEventListener('click', (e) => {
   const btn = e.target.closest('button');

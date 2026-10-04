@@ -2,7 +2,7 @@
 
 Découvre une rando en 3D avant d'y aller : on charge une trace GPX, on voit sa difficulté, son terrain et ses points de passage, puis on suit un petit bouquetin qui parcourt le sentier sur le relief.
 
-Première rando : **Tour des lacs d'Ayous** (vallée d'Ossau, Pyrénées).
+Randos : **Pic d'Ayous par le col d'Aas de Bielle** (ouverte par défaut) et **Tour des lacs d'Ayous** (vallée d'Ossau, Pyrénées). La première rando du catalogue `public/tracks/index.json` est celle affichée au lancement.
 
 ## Fonctionnalités
 
@@ -10,7 +10,7 @@ Première rando : **Tour des lacs d'Ayous** (vallée d'Ossau, Pyrénées).
 - Parcours animé : un bouquetin suit le tracé à une vitesse qui dépend de la pente, la caméra le suit (Drone, Épaule, Aigle), vitesse x1/x2/x4, traînée dorée sur le chemin parcouru
 - Pendant le parcours : énergie demandée à chaque instant (quasi aucune en descente, peu sur le plat, beaucoup dans les fortes montées), vitesse, terrain, altitude, D+ cumulé, heure, prochain point de passage
 - Noms des lieux affichés seulement à l'approche et juste après le passage, pour ne pas surcharger la vue
-- Deux rendus de carte : « rendu jeu vidéo » par défaut (teintes par altitude, lacs et forêts en aplats, ombrage stylisé) ou satellite (IGN + Esri) ; Plan IGN et OpenTopoMap dans les réglages
+- Quatre fonds de carte au choix depuis la barre du haut (et un bouton pour les faire défiler pendant le parcours) : « rendu jeu vidéo » par défaut (teintes par altitude, lacs et forêts en aplats, ombrage stylisé), satellite (IGN + Esri), Plan IGN, OpenTopoMap ; le dernier choix est retenu
 - Relief 3D réglable, vue carte 2D, profil du parcours interactif synchronisé avec la carte
 - Import de n'importe quel fichier GPX (bouton ou glisser-déposer) ; altitudes complétées depuis le modèle de terrain si besoin
 - Utilisable sur mobile
